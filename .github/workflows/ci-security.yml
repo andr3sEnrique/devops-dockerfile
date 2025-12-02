@@ -1,0 +1,48 @@
+name: CI - Build & Security Scan
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout de TU repositorio (el que tiene el Dockerfile)
+      - name: Checkout DevOps Repo
+        uses: actions/checkout@v4
+
+      # 2. Checkout del repositorio de tu compañero (Persona A)
+      # Esto descarga su código y lo pone en una carpeta llamada 'site-source'
+      - name: Checkout WebApp Code (Persona A)
+        uses: actions/checkout@v4
+        with:
+          # 👇👇 ¡CAMBIA ESTO POR EL USUARIO Y REPO DE TU COMPAÑERO! 👇👇
+          repository: andr3sEnrique/devops-web-app 
+          path: site-source
+
+      # 3. Construir la imagen Docker
+      # Docker usará el Dockerfile de tu repo y buscará la carpeta 'site-source'
+      - name: Build Docker Image
+        run: docker build -t my-secure-app:latest .
+
+      # 4. Escaneo de vulnerabilidades con Trivy
+      - name: Run Trivy Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'my-secure-app:latest'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          output: 'trivy-report.txt'
+
+      - name: Show Scan Results
+        run: cat trivy-report.txt
+
+      - name: Upload Trivy Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report-trivy
+          path: trivy-report.txt
