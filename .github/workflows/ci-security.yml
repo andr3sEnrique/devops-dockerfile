@@ -14,11 +14,11 @@ jobs:
 
       # 2. Checkout del repositorio de tu compañero (Persona A)
       # Esto descarga su código y lo pone en una carpeta llamada 'site-source'
-      - name: Checkout WebApp Code (Persona A)
+      - name: Checkout WebApp Code (app)
         uses: actions/checkout@v4
         with:
           # 👇👇 ¡CAMBIA ESTO POR EL USUARIO Y REPO DE TU COMPAÑERO! 👇👇
-          repository: andr3sEnrique/devops-web-app 
+          repository: andr3sEnrique/devops-web-app
           path: site-source
 
       # 3. Construir la imagen Docker
