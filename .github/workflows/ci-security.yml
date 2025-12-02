@@ -1,36 +1,51 @@
-name: CI - Build & Security Scan
+name: CI - Build, Scan, Push & Sign
+
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+
 jobs:
-  build-and-scan:
+  build-secure-and-sign:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # IMPORTANTE: Necesario para que Cosign funcione bien
 
     steps:
-      # 1. Checkout de TU repositorio (el que tiene el Dockerfile)
+      # 1. Checkout del repositorio DevOps
       - name: Checkout DevOps Repo
         uses: actions/checkout@v4
 
-      # 2. Checkout del repositorio de tu compañero (Persona A)
-      # Esto descarga su código y lo pone en una carpeta llamada 'site-source'
-      - name: Checkout WebApp Code (app)
+      # 2. Checkout del código de tu compañero
+      - name: Checkout WebApp Code (Persona A)
         uses: actions/checkout@v4
         with:
-          # 👇👇 ¡CAMBIA ESTO POR EL USUARIO Y REPO DE TU COMPAÑERO! 👇👇
           repository: andr3sEnrique/devops-web-app
           path: site-source
+          # token: ${{ secrets.ACCESS_TOKEN_GITHUB }} # Descomenta si el repo de A es privado
 
-      # 3. Construir la imagen Docker
-      # Docker usará el Dockerfile de tu repo y buscará la carpeta 'site-source'
+      # 3. Login en Docker Hub
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # 4. Instalar Cosign
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      # 5. Build de la imagen (Usando tu usuario de Docker Hub)
       - name: Build Docker Image
-        run: docker build -t my-secure-app:latest .
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/my-secure-app:latest .
 
-      # 4. Escaneo de vulnerabilidades con Trivy
+      # 6. Trivy Scan (Escaneamos ANTES de subir)
       - name: Run Trivy Scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'my-secure-app:latest'
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/my-secure-app:latest'
           format: 'table'
           exit-code: '0'
           ignore-unfixed: true
@@ -38,11 +53,32 @@ jobs:
           severity: 'CRITICAL,HIGH'
           output: 'trivy-report.txt'
 
-      - name: Show Scan Results
-        run: cat trivy-report.txt
-
+      # 7. Subir reporte Trivy (Artifact)
       - name: Upload Trivy Artifact
         uses: actions/upload-artifact@v4
         with:
           name: security-report-trivy
           path: trivy-report.txt
+
+      # 8. PUSH de la imagen (Cosign firma lo que ya está en la nube)
+      - name: Push Docker Image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/my-secure-app:latest
+
+      # ---------------------------------------------------------
+      # ETAPA DE FIRMA Y VERIFICACIÓN
+      # ---------------------------------------------------------
+
+      # 9. Cosign SIGN (Firma la imagen subida)
+      - name: Sign image with a key
+        run: |
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY ${{ secrets.DOCKER_USERNAME }}/my-secure-app:latest
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      # 10. Cosign VERIFY (Confirma que la firma es válida)
+      - name: Verify image signature
+        run: |
+          cosign verify --key env://COSIGN_PUBLIC_KEY ${{ secrets.DOCKER_USERNAME }}/my-secure-app:latest
+        env:
+          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
